@@ -6,15 +6,34 @@
 'use strict';
 
 /* ─── STATE ──────────────────────────────────────────────── */
+function safeJSONParse(key, defaultVal) {
+  try {
+    const val = localStorage.getItem(key);
+    return val ? JSON.parse(val) : JSON.parse(defaultVal);
+  } catch (e) {
+    console.warn(`Error parsing ${key} from localStorage`, e);
+    try { localStorage.removeItem(key); } catch(err) {}
+    return JSON.parse(defaultVal);
+  }
+}
+
+function safeGet(key, defaultVal) {
+  try {
+    return localStorage.getItem(key) || defaultVal;
+  } catch (e) {
+    return defaultVal;
+  }
+}
+
 const state = {
-  cart: JSON.parse(localStorage.getItem('bayouni_cart') || '[]'),
-  wishlist: JSON.parse(localStorage.getItem('bayouni_wishlist') || '[]'),
+  cart: safeJSONParse('bayouni_cart', '[]'),
+  wishlist: safeJSONParse('bayouni_wishlist', '[]'),
   currentFilter: 'all',
   currentSlide: 0,
   statsAnimated: false,
   searchQuery: '',
-  currentLang: localStorage.getItem('bayouni_lang') || 'ar',
-  currentTheme: localStorage.getItem('bayouni_theme') || 'light'
+  currentLang: safeGet('bayouni_lang', 'ar'),
+  currentTheme: safeGet('bayouni_theme', 'light')
 };
 
 /* ─── TRANSLATIONS DICTIONARY ────────────────────────────── */
@@ -600,12 +619,35 @@ function renderStars(rating, small = false) {
 }
 
 /* ─── PRELOADER ──────────────────────────────────────────── */
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    const loader = $('preloader');
-    if (loader) loader.classList.add('hidden');
-  }, 1200);
-});
+(function() {
+  const loader = $('preloader');
+  if (!loader) return;
+
+  let loaderHidden = false;
+  
+  function hideLoader() {
+    if (loaderHidden) return;
+    loaderHidden = true;
+    loader.classList.add('hidden');
+  }
+
+  // Check if DOM is already parsed (Gold Standard check)
+  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    setTimeout(hideLoader, 1500);
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(hideLoader, 1500);
+    });
+  }
+
+  // Fallback 1: Window fully loaded (all images, styles)
+  window.addEventListener('load', () => {
+    setTimeout(hideLoader, 1000);
+  });
+
+  // Fallback 2: Safety timeout (never block the user for more than 3 seconds)
+  setTimeout(hideLoader, 3000);
+})();
 
 /* ─── NAVBAR SCROLL BEHAVIOUR ────────────────────────────── */
 const navbar = $('navbar');
@@ -836,7 +878,7 @@ function renderCartItems() {
   if (state.cart.length === 0) {
     container.innerHTML = `
       <div class="cart-empty">
-        <i class="fas fa-bag-shopping"></i>
+        <i class="fas fa-shopping-bag"></i>
         <p>${translations[lang].cart_empty_msg}</p>
         <button class="btn btn-outline" style="margin-top:1rem" onclick="closeCart()">${translations[lang].cart_continue_shopping}</button>
       </div>`;
@@ -894,7 +936,7 @@ function toggleWishlist(productId, btn) {
     state.wishlist.splice(idx, 1);
     btn.classList.remove('wishlisted');
     btn.querySelector('i').className = 'far fa-heart';
-    showToast('toast_removed_wishlist', '', 'fas fa-heart-crack');
+    showToast('toast_removed_wishlist', '', 'fas fa-times-circle');
   }
   saveStorage();
   updateWishlistUI();
@@ -918,7 +960,7 @@ function renderWishlistItems() {
   if (state.wishlist.length === 0) {
     container.innerHTML = `
       <div class="cart-empty">
-        <i class="fas fa-heart-crack"></i>
+        <i class="fas fa-times-circle"></i>
         <p>${translations[lang].wishlist_empty_msg}</p>
       </div>`;
     return;
@@ -981,7 +1023,7 @@ if (wishlistDrawer) {
 const checkoutBtn = $('checkout-btn');
 if (checkoutBtn) {
   checkoutBtn.addEventListener('click', () => {
-    if (state.cart.length === 0) { showToast('toast_empty_cart', 'error', 'fas fa-circle-exclamation'); return; }
+    if (state.cart.length === 0) { showToast('toast_empty_cart', 'error', 'fas fa-exclamation-circle'); return; }
 
     let total = 0;
     state.cart.forEach(item => {
@@ -1131,7 +1173,7 @@ window.selectStar = function(val) {
 window.submitReview = function(productId) {
   const author = $('review-author-input')?.value?.trim();
   const text   = $('review-text-input')?.value?.trim();
-  if (!author || !text) { showToast('toast_review_error', 'error', 'fas fa-circle-exclamation'); return; }
+  if (!author || !text) { showToast('toast_review_error', 'error', 'fas fa-exclamation-circle'); return; }
 
   const p = products.find(pr => pr.id === productId);
   if (!p) return;
@@ -1297,8 +1339,9 @@ const newsletterForm = $('newsletter-form');
 if (newsletterForm) {
   newsletterForm.addEventListener('submit', e => {
     e.preventDefault();
-    showToast('toast_newsletter', 'success', 'fas fa-envelope-circle-check');
-    e.target.reset();
+    showToast('toast_newsletter', 'success', 'fas fa-envelope');
+    const input = newsletterForm.querySelector('input');
+    if (input) input.value = '';
   });
 }
 
@@ -1365,7 +1408,7 @@ if (contactForm) {
     const phone   = $('contact-phone-input')?.value.trim();
 
     if (!name || !phone) {
-      showToast('toast_contact_error', 'error', 'fas fa-circle-exclamation');
+      showToast('toast_contact_error', 'error', 'fas fa-exclamation-circle');
       return;
     }
 
@@ -1909,18 +1952,27 @@ function initCustomCursor() {
   $$('.hero-badge, .hero h1, .hero p, .hero-buttons').forEach(el => el.classList.remove('animate-item'));
 
   revealElements.forEach(selector => {
-    $$(selector).forEach((el, index) => {
+    Array.from($$(selector)).forEach((el, index) => {
       el.classList.add('reveal');
       // Stagger item reveals sequentially
       if (selector.includes('card') || selector.includes('slide') || selector.includes('stat-card')) {
         el.classList.add(`reveal-delay-${(index % 4) + 1}`);
       }
-      revealObserver.observe(el);
+      
+      // Do not let the IntersectionObserver trigger the hero items
+      // They should trigger automatically via setTimeout after the preloader
+      if (!selector.includes('hero-content')) {
+        revealObserver.observe(el);
+      }
     });
   });
 
-  // Hero immediate load reveal animation
+  // Hero immediate load reveal animation (triggered right after preloader)
   setTimeout(() => {
-    $$('.hero .reveal').forEach(el => el.classList.add('reveal-active'));
-  }, 1000);
+    Array.from($$('.hero .reveal')).forEach((el, index) => {
+      // Add a nice staggered delay for hero elements specifically
+      el.style.transitionDelay = `${index * 150}ms`;
+      el.classList.add('reveal-active');
+    });
+  }, 400);
 })();
