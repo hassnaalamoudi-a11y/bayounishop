@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@genkit-ai/google-genai": "^1.37.0",
+    "genkit": "^1.37.0"
+  }
+}
